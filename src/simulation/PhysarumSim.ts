@@ -37,6 +37,20 @@ export interface PhysarumOptions {
   foodSpreadRadius?: number
   /** Weight of extracellular slime avoidance (0–1). Default 0.3. */
   slimeAvoidanceWeight?: number
+  /** Energy lost per tick from starvation. Default 0.0002. */
+  starveRate?: number
+  /** Energy gained per tick for agents adjacent to food. Default 0.02. */
+  feedRate?: number
+  /** Food mass consumed per tick per feeding agent. Default 0.003. */
+  massLossRate?: number
+  /** Energy threshold above which agents can divide. Default 1.5. */
+  divisionThreshold?: number
+  /** Per-tick probability of division when eligible. Default 0.03. */
+  divisionChance?: number
+  /** Cap on per-agent energy. Default 2.0. */
+  maxEnergy?: number
+  /** Starting mass for new food pellets. Default 5.0. */
+  defaultFoodMass?: number
 }
 
 /** A grid position */
@@ -90,6 +104,15 @@ export class PhysarumSim {
   foodSpreadRadius: number
   slimeAvoidanceWeight: number
 
+  // Biomass dynamics (feeding → growth, absence of food → starvation)
+  starveRate: number
+  feedRate: number
+  massLossRate: number
+  divisionThreshold: number
+  divisionChance: number
+  maxEnergy: number
+  defaultFoodMass: number
+
   // State
   trailMap: Float32Array
   trailMapB: Float32Array
@@ -99,12 +122,10 @@ export class PhysarumSim {
   agentX: Float32Array
   agentY: Float32Array
   agentHeading: Float32Array
+  /** Per-agent energy reserve (0–maxEnergy). Gained by eating, lost to starvation. */
+  agentEnergy: Float32Array
   agentCount: number
   foodSources: FoodSource[]
-  /** How much mass is consumed per nearby agent per tick */
-  foodConsumptionRate: number
-  /** Default starting mass for new food */
-  defaultFoodMass: number
   blocked: Uint8Array
   visitedTrail: Float32Array
   visitedDecay: number
@@ -126,6 +147,15 @@ export class PhysarumSim {
     this.foodSpreadRadius = opts.foodSpreadRadius ?? 3
     this.slimeAvoidanceWeight = opts.slimeAvoidanceWeight ?? 0.3
 
+    // Biomass dynamics (see notes in _consumeFood / _starveAgents / _divideAgents)
+    this.starveRate = opts.starveRate ?? 0.0002
+    this.feedRate = opts.feedRate ?? 0.02
+    this.massLossRate = opts.massLossRate ?? 0.003
+    this.divisionThreshold = opts.divisionThreshold ?? 1.5
+    this.divisionChance = opts.divisionChance ?? 0.03
+    this.maxEnergy = opts.maxEnergy ?? 2.0
+    this.defaultFoodMass = opts.defaultFoodMass ?? 5.0
+
     this.trailMap = new Float32Array(width * height)
     this.trailMapB = new Float32Array(width * height)
     this.foodTrailMap = new Float32Array(width * height)
@@ -135,11 +165,10 @@ export class PhysarumSim {
     this.agentX = new Float32Array(this.maxAgents)
     this.agentY = new Float32Array(this.maxAgents)
     this.agentHeading = new Float32Array(this.maxAgents)
+    this.agentEnergy = new Float32Array(this.maxAgents)
     this.agentCount = 0
 
     this.foodSources = []
-    this.foodConsumptionRate = 0.0005
-    this.defaultFoodMass = 1.0
     this.blocked = new Uint8Array(width * height)
     this.visitedTrail = new Float32Array(width * height)
     // 0.99 → a cell visited once at max intensity fades to invisible
@@ -190,6 +219,7 @@ export class PhysarumSim {
       this.agentX[ai] = x
       this.agentY[ai] = y
       this.agentHeading[ai] = Math.random() * TWO_PI
+      this.agentEnergy[ai] = 1.0
     }
   }
 
@@ -217,11 +247,12 @@ export class PhysarumSim {
   step(): void {
     this._emitFood()
     this._moveAgents()
-    this._consumeFood()
+    this._consumeFood()    // agents adjacent to food gain energy, food loses mass
+    this._starveAgents()   // all agents lose energy; dead ones removed
+    this._divideAgents()   // well-fed agents can split into new adjacent agents
     this._diffuseTrail()
     this._decayTrail()
     this._reinforceNetwork()
-    this._growTowardFood()
   }
 
   private _emitFood(): void {
@@ -254,26 +285,119 @@ export class PhysarumSim {
    * The more agents near a food source, the faster it's consumed.
    * Food is removed when its mass is depleted.
    */
+  /**
+   * Agents adjacent to food "eat" it: they gain energy, and the food loses
+   * mass. Each agent can only feed from one food source per tick (the
+   * nearest available one), so food is depleted proportionally to the
+   * number of agents physically touching it.
+   */
   private _consumeFood(): void {
     if (this.foodSources.length === 0) return
-    const w = this.width
-    const consumeRadius = 2
+    const consumeRadius = 1.8
+    const consumeR2 = consumeRadius * consumeRadius
 
-    for (const food of this.foodSources) {
-      // Count agents near this food source
-      let nearbyAgents = 0
-      for (let i = 0; i < this.agentCount; i++) {
-        const dx = this.agentX[i] - food.x
-        const dy = this.agentY[i] - food.y
-        if (dx * dx + dy * dy <= consumeRadius * consumeRadius) {
-          nearbyAgents++
+    for (let i = 0; i < this.agentCount; i++) {
+      const ax = this.agentX[i]
+      const ay = this.agentY[i]
+
+      // Find the closest food source this agent is adjacent to
+      let bestFood: FoodSource | null = null
+      let bestD2 = consumeR2
+      for (const food of this.foodSources) {
+        if (food.mass <= 0) continue
+        const dx = ax - food.x
+        const dy = ay - food.y
+        const d2 = dx * dx + dy * dy
+        if (d2 <= bestD2) {
+          bestD2 = d2
+          bestFood = food
         }
       }
-      food.mass -= this.foodConsumptionRate * nearbyAgents
+
+      if (bestFood === null) continue
+
+      // Eat: gain energy (capped), food loses mass
+      const consumed = Math.min(this.massLossRate, bestFood.mass)
+      bestFood.mass -= consumed
+      this.agentEnergy[i] = Math.min(
+        this.agentEnergy[i] + this.feedRate,
+        this.maxEnergy
+      )
     }
 
     // Remove fully consumed food
     this.foodSources = this.foodSources.filter(f => f.mass > 0.02)
+  }
+
+  /**
+   * Agents lose a bit of energy every tick. Agents that run out starve
+   * and are removed from the population via swap-and-pop.
+   */
+  private _starveAgents(): void {
+    const sr = this.starveRate
+    for (let i = 0; i < this.agentCount; ) {
+      this.agentEnergy[i] -= sr
+      if (this.agentEnergy[i] <= 0) {
+        // Swap-pop death: move last agent into this slot, shrink count
+        const last = --this.agentCount
+        if (i !== last) {
+          this.agentX[i] = this.agentX[last]
+          this.agentY[i] = this.agentY[last]
+          this.agentHeading[i] = this.agentHeading[last]
+          this.agentEnergy[i] = this.agentEnergy[last]
+        }
+        // Re-check slot i (now holds a different agent)
+      } else {
+        i++
+      }
+    }
+  }
+
+  /**
+   * Well-fed agents can split into two. The parent stays in place and the
+   * child appears in a random adjacent unoccupied cell. Both resulting
+   * agents get half of the parent's pre-division energy, so biomass
+   * growth happens only at the expense of stored energy (which came from
+   * feeding).
+   */
+  private _divideAgents(): void {
+    if (this.agentCount >= this.maxAgents) return
+    const w = this.width
+    const h = this.height
+    const threshold = this.divisionThreshold
+    const chance = this.divisionChance
+
+    // Iterate a snapshot of the current count — children shouldn't immediately
+    // divide in the same tick.
+    const initialCount = this.agentCount
+    for (let i = 0; i < initialCount; i++) {
+      if (this.agentCount >= this.maxAgents) break
+      if (this.agentEnergy[i] < threshold) continue
+      if (Math.random() > chance) continue
+
+      const px = Math.floor(this.agentX[i])
+      const py = Math.floor(this.agentY[i])
+
+      // Try a random adjacent cell
+      const dx = ((Math.random() * 3) | 0) - 1
+      const dy = ((Math.random() * 3) | 0) - 1
+      if (dx === 0 && dy === 0) continue
+      const nx = px + dx
+      const ny = py + dy
+      if (nx < 1 || nx >= w - 1 || ny < 1 || ny >= h - 1) continue
+      const idx = ny * w + nx
+      if (this.blocked[idx] || this.occupancy[idx]) continue
+
+      // Spawn child, split energy
+      const ai = this.agentCount++
+      this.agentX[ai] = nx + 0.5
+      this.agentY[ai] = ny + 0.5
+      this.agentHeading[ai] = Math.random() * TWO_PI
+      const half = this.agentEnergy[i] / 2
+      this.agentEnergy[i] = half
+      this.agentEnergy[ai] = half
+      this.occupancy[idx] = 1
+    }
   }
 
   private _moveAgents(): void {
@@ -428,28 +552,6 @@ export class PhysarumSim {
 
       if (neighbors >= 2) {
         t[ay * w + ax] += neighbors * 0.3
-      }
-    }
-  }
-
-  /**
-   * Once the slime has ACTUALLY reached a food source, spawn a few
-   * new agents nearby — simulating the organism's growth when feeding.
-   *
-   * Critical: we gate on visitedTrail (only written by agent movement),
-   * not on trailMap (which includes food emission). Otherwise new agents
-   * would spawn at food the moment it's placed, making slime appear
-   * there instantly without exploration.
-   */
-  private _growTowardFood(): void {
-    if (this.agentCount >= this.maxAgents) return
-
-    for (const food of this.foodSources) {
-      const idx = food.y * this.width + food.x
-      // Require real slime presence at/near the food
-      if (this.visitedTrail[idx] > 0.3 && Math.random() < 0.1) {
-        const count = Math.min(2, this.maxAgents - this.agentCount)
-        this.seedAgents(food.x, food.y, count, 2)
       }
     }
   }
