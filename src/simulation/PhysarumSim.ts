@@ -73,9 +73,20 @@ export interface FoodSource {
 export interface SlimeCell {
   x: number
   y: number
-  /** Normalized trail intensity (0–1) */
-  intensity: number
-  /** Voxel stack height (1–3) based on trail concentration */
+  /**
+   * Trail concentration (0–1). Higher = thicker tube.
+   * Controls voxel stack height.
+   */
+  density: number
+  /**
+   * Agent activity recency (0–1).
+   * 1.0 = agent currently present (leading edge / active flow).
+   * 0.5 = established body, recent traffic.
+   * Low = slime was here but is retracting / being reabsorbed.
+   * Controls voxel brightness.
+   */
+  recency: number
+  /** Voxel stack height (1–3) derived from density */
   height: number
 }
 
@@ -570,34 +581,58 @@ export class PhysarumSim {
     return grid
   }
 
-  getActiveCells(threshold: number = 0.08): SlimeCell[] {
+  /**
+   * Returns cells to render as slime voxels. Each cell carries two
+   * independent signals:
+   *
+   *   density = trailMap strength → how thick the tube is (voxel height)
+   *   recency = visitedTrail + occupancy → how active the cell is (brightness)
+   *
+   * A cell renders if either (a) an agent is currently there, or
+   * (b) an agent visited recently enough that visitedTrail is still
+   * above `recencyThreshold`. This means fading/retracting slime
+   * still renders — just dim — so you can see the organism shrinking.
+   */
+  getActiveCells(recencyThreshold: number = 0.05): SlimeCell[] {
     const cells: SlimeCell[] = []
     const w = this.width
     const h = this.height
     const t = this.trailMap
+    const v = this.visitedTrail
+    const occ = this.occupancy
 
-    let maxVal = 1
+    // Normalize trail density against the grid's current max
+    let maxTrail = 1
     for (let i = 0; i < t.length; i++) {
-      if (t[i] > maxVal) maxVal = t[i]
+      if (t[i] > maxTrail) maxTrail = t[i]
     }
+    const trailNorm = maxTrail * 0.15
 
-    const normFactor = maxVal * 0.15
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
         const idx = y * w + x
-        // Only render cells an agent has actually visited.
-        // Food emits chemoattractant into trailMap to guide agents,
-        // but visitedTrail is only written by agent movement — so this
-        // prevents food from instantly appearing as slime.
-        if (this.visitedTrail[idx] < 0.01) continue
-        const val = t[idx] / normFactor
-        if (val > threshold && !this.blocked[idx]) {
-          cells.push({
-            x, y,
-            intensity: Math.min(val, 1.0),
-            height: Math.min(Math.floor(val * 3) + 1, 3)
-          })
-        }
+        if (this.blocked[idx]) continue
+
+        const vt = v[idx]
+        const hasAgent = occ[idx] === 1
+
+        // Must be either agent-present or recently-visited (visitedTrail
+        // is only written by agent movement, so food emission never
+        // triggers false positives here).
+        if (!hasAgent && vt < recencyThreshold) continue
+
+        // Agents get max recency; otherwise fall off with visitedTrail
+        const recency = hasAgent ? 1.0 : Math.min(vt, 1.0)
+        // Tube density from chemical trail concentration
+        const density = Math.min(t[idx] / trailNorm, 1.0)
+
+        cells.push({
+          x, y,
+          density,
+          recency,
+          // Minimum height 1 so even faded cells are visible as thin voxels
+          height: Math.max(1, Math.min(Math.floor(density * 3) + 1, 3)),
+        })
       }
     }
     return cells
