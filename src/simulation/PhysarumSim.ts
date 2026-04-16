@@ -13,62 +13,117 @@
 
 const TWO_PI = Math.PI * 2
 
+/** Tunable behavioral parameters for the simulation */
+export interface PhysarumOptions {
+  /** Sensor angle in radians (SA). Default 22.5° (Jones 2010). */
+  sensorAngle?: number
+  /** Rotation angle in radians (RA). Default 45°. */
+  rotationAngle?: number
+  /** Sensor offset distance in cells (SO). Default 5. */
+  sensorDistance?: number
+  /** Movement speed in cells per tick (SS). Default 1. */
+  stepSize?: number
+  /** Chemoattractant deposited per agent step. Default 5. */
+  depositAmount?: number
+  /** Trail decay multiplier per tick (0–1). Default 0.9. */
+  decayFactor?: number
+  /** Diffusion kernel radius. Default 1 (3x3). */
+  diffuseKernel?: number
+  /** Maximum agent population. Default 2000. */
+  maxAgents?: number
+  /** Chemoattractant emitted by food per tick. Default 60. */
+  foodDepositAmount?: number
+  /** Radius of food chemoattractant spread in cells. Default 3. */
+  foodSpreadRadius?: number
+  /** Weight of extracellular slime avoidance (0–1). Default 0.3. */
+  slimeAvoidanceWeight?: number
+}
+
+/** A grid position */
+export interface GridPos {
+  x: number
+  y: number
+}
+
+/** A voxel cell returned by getActiveCells for rendering */
+export interface SlimeCell {
+  x: number
+  y: number
+  /** Normalized trail intensity (0–1) */
+  intensity: number
+  /** Voxel stack height (1–3) based on trail concentration */
+  height: number
+}
+
 export class PhysarumSim {
-  constructor(width, height, opts = {}) {
+  readonly width: number
+  readonly height: number
+
+  // Behavioral parameters (mutable for live tuning)
+  sensorAngle: number
+  rotationAngle: number
+  sensorDistance: number
+  stepSize: number
+  depositAmount: number
+  decayFactor: number
+  diffuseKernel: number
+  maxAgents: number
+  foodDepositAmount: number
+  foodSpreadRadius: number
+  slimeAvoidanceWeight: number
+
+  // State
+  trailMap: Float32Array
+  trailMapB: Float32Array
+  occupancy: Uint8Array
+  agentX: Float32Array
+  agentY: Float32Array
+  agentHeading: Float32Array
+  agentCount: number
+  foodSources: GridPos[]
+  blocked: Uint8Array
+  visitedTrail: Float32Array
+  visitedDecay: number
+
+  constructor(width: number, height: number, opts: PhysarumOptions = {}) {
     this.width = width
     this.height = height
 
-    // --- Simulation parameters (Jones 2010, adapted for 48x48 grid) ---
-    // Jones' paper: SA=22.5°, RA=45°, SO=9 for large grids.
-    // We scale SO down for our small grid, and use SA=22.5° for realistic
-    // tight network formation (the organism follows existing trails closely).
-    this.sensorAngle = opts.sensorAngle ?? (Math.PI / 8)        // SA: 22.5° (Jones default)
-    this.rotationAngle = opts.rotationAngle ?? Math.PI / 4      // RA: 45°   (Jones default)
-    this.sensorDistance = opts.sensorDistance ?? 5               // SO: scaled down from 9
-    this.stepSize = opts.stepSize ?? 1                          // SS: 1 pixel per tick
-    this.depositAmount = opts.depositAmount ?? 5                // chemo deposited per agent step
-    this.decayFactor = opts.decayFactor ?? 0.9                  // Jones: decayT = 0.1 → multiply by 0.9
-    this.diffuseKernel = opts.diffuseKernel ?? 1                // 3x3 mean filter
+    // Jones 2010 defaults, adapted for small grids
+    this.sensorAngle = opts.sensorAngle ?? (Math.PI / 8)
+    this.rotationAngle = opts.rotationAngle ?? Math.PI / 4
+    this.sensorDistance = opts.sensorDistance ?? 5
+    this.stepSize = opts.stepSize ?? 1
+    this.depositAmount = opts.depositAmount ?? 5
+    this.decayFactor = opts.decayFactor ?? 0.9
+    this.diffuseKernel = opts.diffuseKernel ?? 1
     this.maxAgents = opts.maxAgents ?? 2000
-    this.foodDepositAmount = opts.foodDepositAmount ?? 60       // food chemoattractant emission
+    this.foodDepositAmount = opts.foodDepositAmount ?? 60
     this.foodSpreadRadius = opts.foodSpreadRadius ?? 3
-    // Slime avoidance: real Physarum leaves extracellular slime it avoids
     this.slimeAvoidanceWeight = opts.slimeAvoidanceWeight ?? 0.3
 
-    // --- State ---
-    this.trailMap = new Float32Array(width * height)           // chemoattractant concentrations
-    this.trailMapB = new Float32Array(width * height)          // double buffer for diffusion
-    this.occupancy = new Uint8Array(width * height)            // 1 cell per agent max
+    this.trailMap = new Float32Array(width * height)
+    this.trailMapB = new Float32Array(width * height)
+    this.occupancy = new Uint8Array(width * height)
 
-    // Agents: parallel arrays for cache-friendly iteration
     this.agentX = new Float32Array(this.maxAgents)
     this.agentY = new Float32Array(this.maxAgents)
     this.agentHeading = new Float32Array(this.maxAgents)
     this.agentCount = 0
 
-    // Food sources: [{x, y}]
     this.foodSources = []
-
-    // Terrain mask: cells where slime cannot go (rocks, walls)
     this.blocked = new Uint8Array(width * height)
-
-    // Track which cells have "ever been visited" for slime trail memory
     this.visitedTrail = new Float32Array(width * height)
     this.visitedDecay = 0.999
   }
 
-  /** Mark a cell as blocked (terrain obstacle) */
-  setBlocked(x, y, val = 1) {
+  setBlocked(x: number, y: number, val: number = 1): void {
     if (x >= 0 && x < this.width && y >= 0 && y < this.height) {
       this.blocked[y * this.width + x] = val
     }
   }
 
-  /**
-   * Load a maze from a 2D array of 0s and 1s (1 = wall).
-   * The array is [row][col] where row = y, col = x.
-   */
-  loadMaze(mazeGrid) {
+  loadMaze(mazeGrid: number[][]): void {
     for (let y = 0; y < mazeGrid.length && y < this.height; y++) {
       for (let x = 0; x < mazeGrid[y].length && x < this.width; x++) {
         this.blocked[y * this.width + x] = mazeGrid[y][x] ? 1 : 0
@@ -76,8 +131,7 @@ export class PhysarumSim {
     }
   }
 
-  /** Add a food source at grid position */
-  addFood(x, y) {
+  addFood(x: number, y: number): void {
     x = Math.round(x)
     y = Math.round(y)
     if (x >= 0 && x < this.width && y >= 0 && y < this.height) {
@@ -85,15 +139,13 @@ export class PhysarumSim {
     }
   }
 
-  /** Remove food near a position */
-  removeFood(x, y, radius = 2) {
+  removeFood(x: number, y: number, radius: number = 2): void {
     this.foodSources = this.foodSources.filter(
       f => Math.abs(f.x - x) > radius || Math.abs(f.y - y) > radius
     )
   }
 
-  /** Seed agents in a cluster around a position */
-  seedAgents(cx, cy, count, radius = 5) {
+  seedAgents(cx: number, cy: number, count: number, radius: number = 5): void {
     for (let i = 0; i < count && this.agentCount < this.maxAgents; i++) {
       const angle = Math.random() * TWO_PI
       const r = Math.random() * radius
@@ -110,8 +162,7 @@ export class PhysarumSim {
     }
   }
 
-  /** Sample a float32 map with bilinear interpolation, clamped to bounds */
-  _sampleMap(map, x, y) {
+  private _sampleMap(map: Float32Array, x: number, y: number): number {
     const ix = Math.floor(x)
     const iy = Math.floor(y)
     if (ix < 0 || ix >= this.width - 1 || iy < 0 || iy >= this.height - 1) return 0
@@ -126,20 +177,13 @@ export class PhysarumSim {
     )
   }
 
-  /**
-   * Sample effective attractiveness at a point.
-   * Combines chemoattractant trail with avoidance of extracellular slime
-   * (real Physarum leaves slime it avoids — externalized spatial memory,
-   * Reid et al. 2012 PNAS).
-   */
-  sampleTrail(x, y) {
+  sampleTrail(x: number, y: number): number {
     const trail = this._sampleMap(this.trailMap, x, y)
     const visited = this._sampleMap(this.visitedTrail, x, y)
     return trail - visited * this.slimeAvoidanceWeight
   }
 
-  /** One simulation tick */
-  step() {
+  step(): void {
     this._emitFood()
     this._moveAgents()
     this._diffuseTrail()
@@ -148,8 +192,7 @@ export class PhysarumSim {
     this._growTowardFood()
   }
 
-  /** Food sources continuously emit chemoattractant */
-  _emitFood() {
+  private _emitFood(): void {
     const w = this.width
     const h = this.height
     const r = this.foodSpreadRadius
@@ -159,7 +202,7 @@ export class PhysarumSim {
           const nx = food.x + dx
           const ny = food.y + dy
           if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue
-          if (this.blocked[ny * w + nx]) continue  // no emission into walls
+          if (this.blocked[ny * w + nx]) continue
           const dist = Math.sqrt(dx * dx + dy * dy)
           if (dist <= r) {
             const falloff = 1 - dist / (r + 1)
@@ -170,14 +213,11 @@ export class PhysarumSim {
     }
   }
 
-  /** Agent sensing, rotation, movement, and deposit */
-  _moveAgents() {
+  private _moveAgents(): void {
     const { sensorAngle: SA, rotationAngle: RA, sensorDistance: SO,
             stepSize: SS, depositAmount: DA, width: w, height: h } = this
 
-    // Clear occupancy
     this.occupancy.fill(0)
-    // Mark current positions
     for (let i = 0; i < this.agentCount; i++) {
       const ix = Math.floor(this.agentX[i])
       const iy = Math.floor(this.agentY[i])
@@ -191,7 +231,6 @@ export class PhysarumSim {
       const y = this.agentY[i]
       const heading = this.agentHeading[i]
 
-      // --- SENSE ---
       const fL = this.sampleTrail(
         x + Math.cos(heading + SA) * SO,
         y + Math.sin(heading + SA) * SO
@@ -205,70 +244,49 @@ export class PhysarumSim {
         y + Math.sin(heading - SA) * SO
       )
 
-      // --- ROTATE ---
       let newHeading = heading
       if (fC > fL && fC > fR) {
-        // Continue straight — strongest signal ahead
+        // straight
       } else if (fC < fL && fC < fR) {
-        // Both sides stronger — pick randomly
         newHeading += (Math.random() < 0.5 ? RA : -RA)
       } else if (fL > fR) {
         newHeading += RA
       } else if (fR > fL) {
         newHeading -= RA
       } else {
-        // All equal — add small random perturbation
         newHeading += (Math.random() - 0.5) * RA * 0.5
       }
 
-      // Normalize heading
       newHeading = ((newHeading % TWO_PI) + TWO_PI) % TWO_PI
       this.agentHeading[i] = newHeading
 
-      // --- MOVE ---
       const nx = x + Math.cos(newHeading) * SS
       const ny = y + Math.sin(newHeading) * SS
-
       const nix = Math.floor(nx)
       const niy = Math.floor(ny)
 
-      // Boundary check + blocked check + occupancy check
       if (nix >= 1 && nix < w - 1 && niy >= 1 && niy < h - 1 &&
           !this.blocked[niy * w + nix] &&
           !this.occupancy[niy * w + nix]) {
-        // Clear old occupancy
         const oix = Math.floor(x)
         const oiy = Math.floor(y)
         if (oix >= 0 && oix < w && oiy >= 0 && oiy < h) {
           this.occupancy[oiy * w + oix] = 0
         }
-        // Move
         this.agentX[i] = nx
         this.agentY[i] = ny
         this.occupancy[niy * w + nix] = 1
-
-        // --- DEPOSIT ---
         this.trailMap[niy * w + nix] += DA
         this.visitedTrail[niy * w + nix] = Math.min(
           this.visitedTrail[niy * w + nix] + 0.1, 1.0
         )
       } else {
-        // Can't move — pick a new random heading
         this.agentHeading[i] = Math.random() * TWO_PI
       }
     }
   }
 
-  /**
-   * 3x3 mean filter diffusion, wall-aware.
-   *
-   * Critical for maze-solving: chemoattractant must NOT diffuse through
-   * blocked cells (walls). In the real organism, chemical signals propagate
-   * only through the plasmodium and surrounding medium, not through solid
-   * barriers. Without this, the slime would "smell" food through walls
-   * and maze-solving would fail.
-   */
-  _diffuseTrail() {
+  private _diffuseTrail(): void {
     const w = this.width
     const h = this.height
     const src = this.trailMap
@@ -278,7 +296,6 @@ export class PhysarumSim {
     for (let y = 1; y < h - 1; y++) {
       for (let x = 1; x < w - 1; x++) {
         const idx = y * w + x
-        // Blocked cells don't participate in diffusion
         if (blocked[idx]) {
           dst[idx] = 0
           continue
@@ -288,7 +305,6 @@ export class PhysarumSim {
         for (let dy = -1; dy <= 1; dy++) {
           for (let dx = -1; dx <= 1; dx++) {
             const nIdx = (y + dy) * w + (x + dx)
-            // Only diffuse from non-blocked neighbors
             if (!blocked[nIdx]) {
               sum += src[nIdx]
               count++
@@ -299,13 +315,11 @@ export class PhysarumSim {
       }
     }
 
-    // Swap buffers
     this.trailMap = dst
     this.trailMapB = src
   }
 
-  /** Decay trail values */
-  _decayTrail() {
+  private _decayTrail(): void {
     const t = this.trailMap
     const df = this.decayFactor
     const blocked = this.blocked
@@ -314,7 +328,6 @@ export class PhysarumSim {
       t[i] *= df
       if (t[i] < 0.01) t[i] = 0
     }
-    // Also decay visited trail slowly
     const v = this.visitedTrail
     const vd = this.visitedDecay
     for (let i = 0; i < v.length; i++) {
@@ -322,31 +335,16 @@ export class PhysarumSim {
     }
   }
 
-  /**
-   * Network reinforcement inspired by Tero et al. (2007) adaptive dynamics.
-   *
-   * In real Physarum, tubes carrying higher cytoplasmic flux grow thicker
-   * (actin-myosin cortex expands) while underused tubes shrink and are
-   * reabsorbed. Mathematically: dD/dt = f(|Q|) - r*D.
-   *
-   * We approximate this by counting local agent density as a proxy for
-   * "flux" and giving a small trail boost to high-traffic cells. This
-   * creates the positive feedback loop that makes the organism converge
-   * on shortest paths through mazes (Nakagaki et al. 2000 Nature).
-   */
-  _reinforceNetwork() {
+  private _reinforceNetwork(): void {
     const w = this.width
     const h = this.height
     const t = this.trailMap
 
-    // Count agent density per cell (proxy for cytoplasmic flux)
-    // Cells with many nearby agents are part of active transport tubes
     for (let i = 0; i < this.agentCount; i++) {
       const ax = Math.floor(this.agentX[i])
       const ay = Math.floor(this.agentY[i])
       if (ax < 1 || ax >= w - 1 || ay < 1 || ay >= h - 1) continue
 
-      // Count neighbors in 3x3
       let neighbors = 0
       for (let dy = -1; dy <= 1; dy++) {
         for (let dx = -1; dx <= 1; dx++) {
@@ -355,22 +353,17 @@ export class PhysarumSim {
         }
       }
 
-      // High local density → reinforce trail (tube thickening)
-      // This amplifies trails along busy routes and starves dead ends
       if (neighbors >= 2) {
         t[ay * w + ax] += neighbors * 0.3
       }
     }
   }
 
-  /** Spontaneously spawn agents near food when slime has found it */
-  _growTowardFood() {
+  private _growTowardFood(): void {
     if (this.agentCount >= this.maxAgents) return
 
     for (const food of this.foodSources) {
       const idx = food.y * this.width + food.x
-      // If there's significant trail at the food, the slime has "found" it
-      // Spawn a few new agents to simulate growth
       if (this.trailMap[idx] > 10 && Math.random() < 0.15) {
         const count = Math.min(3, this.maxAgents - this.agentCount)
         this.seedAgents(food.x, food.y, count, 2)
@@ -378,28 +371,22 @@ export class PhysarumSim {
     }
   }
 
-  /** Get a density grid suitable for rendering (0-1 normalized per cell) */
-  getDensityGrid() {
-    const w = this.width
-    const h = this.height
-    const grid = new Float32Array(w * h)
+  getDensityGrid(): Float32Array {
+    const grid = new Float32Array(this.width * this.height)
     const t = this.trailMap
 
-    // Find max for normalization
     let maxVal = 1
     for (let i = 0; i < t.length; i++) {
       if (t[i] > maxVal) maxVal = t[i]
     }
-
     for (let i = 0; i < t.length; i++) {
       grid[i] = Math.min(t[i] / (maxVal * 0.3), 1.0)
     }
     return grid
   }
 
-  /** Get active cells above a threshold for voxel rendering */
-  getActiveCells(threshold = 0.08) {
-    const cells = []
+  getActiveCells(threshold: number = 0.08): SlimeCell[] {
+    const cells: SlimeCell[] = []
     const w = this.width
     const h = this.height
     const t = this.trailMap
@@ -417,7 +404,6 @@ export class PhysarumSim {
           cells.push({
             x, y,
             intensity: Math.min(val, 1.0),
-            // Height based on concentration: thicker where more trail
             height: Math.min(Math.floor(val * 3) + 1, 3)
           })
         }

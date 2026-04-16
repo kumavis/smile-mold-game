@@ -1,21 +1,36 @@
 import React, { useRef, useCallback } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
-import TerrainMesh from './TerrainMesh'
-import SlimeMoldMesh from './SlimeMoldMesh'
-import FoodMesh from './FoodMesh'
-import Terrarium from './Terrarium'
+import type { ThreeEvent } from '@react-three/fiber'
+import TerrainMesh from './TerrainMesh.tsx'
+import SlimeMoldMesh from './SlimeMoldMesh.tsx'
+import FoodMesh from './FoodMesh.tsx'
+import Terrarium from './Terrarium.tsx'
+import type { TerrainData } from '../utils/terrainGen.ts'
+import type { SlimeCell, GridPos } from '../simulation/PhysarumSim.ts'
+
+interface Props {
+  terrain: TerrainData
+  slimeCells: SlimeCell[]
+  slimeColor: string
+  foodSources: GridPos[]
+  gridSize: number
+  foodMode: boolean
+  onPlaceFood: (x: number, z: number) => void
+  onRemoveFood: (x: number, z: number) => void
+  heightMap: Uint8Array
+}
 
 export default function Scene({
   terrain, slimeCells, slimeColor, foodSources, gridSize,
   foodMode, onPlaceFood, onRemoveFood, heightMap
-}) {
+}: Props) {
   const offset = -gridSize / 2
 
   return (
     <Canvas
       camera={{ position: [0, 40, 50], fov: 45, near: 0.1, far: 200 }}
-      style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
+      style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', touchAction: 'none' }}
       gl={{ antialias: true }}
     >
       <color attach="background" args={['#1a1a2e']} />
@@ -46,7 +61,6 @@ export default function Scene({
         foodMode={foodMode}
         onPlaceFood={onPlaceFood}
         onRemoveFood={onRemoveFood}
-        heightMap={heightMap}
       />
 
       <OrbitControls
@@ -61,19 +75,31 @@ export default function Scene({
   )
 }
 
-/** Invisible plane for click interaction to place/remove food */
-function FloorInteraction({ gridSize, foodMode, onPlaceFood, onRemoveFood, heightMap }) {
-  const meshRef = useRef()
+interface FloorProps {
+  gridSize: number
+  foodMode: boolean
+  onPlaceFood: (x: number, z: number) => void
+  onRemoveFood: (x: number, z: number) => void
+}
+
+/**
+ * Invisible plane for click/tap interaction to place/remove food.
+ * Handles both mouse clicks (desktop) and touch/pointer events (mobile).
+ */
+function FloorInteraction({ gridSize, foodMode, onPlaceFood, onRemoveFood }: FloorProps) {
+  const meshRef = useRef<THREE.Mesh>(null)
   const offset = gridSize / 2
 
-  const handleClick = useCallback((e) => {
+  const handleInteraction = useCallback((e: ThreeEvent<PointerEvent | MouseEvent>) => {
     if (!foodMode) return
     e.stopPropagation()
     const point = e.point
     const gx = Math.round(point.x + offset)
     const gz = Math.round(point.z + offset)
     if (gx >= 0 && gx < gridSize && gz >= 0 && gz < gridSize) {
-      if (e.button === 2 || e.shiftKey) {
+      // Shift+click or right-click to remove; normal click/tap to place
+      const nativeEvent = e.nativeEvent
+      if (nativeEvent instanceof MouseEvent && (nativeEvent.button === 2 || nativeEvent.shiftKey)) {
         onRemoveFood(gx, gz)
       } else {
         onPlaceFood(gx, gz)
@@ -86,8 +112,7 @@ function FloorInteraction({ gridSize, foodMode, onPlaceFood, onRemoveFood, heigh
       ref={meshRef}
       position={[0, 2, 0]}
       rotation={[-Math.PI / 2, 0, 0]}
-      onClick={handleClick}
-      onContextMenu={handleClick}
+      onPointerDown={handleInteraction}
       visible={false}
     >
       <planeGeometry args={[gridSize, gridSize]} />

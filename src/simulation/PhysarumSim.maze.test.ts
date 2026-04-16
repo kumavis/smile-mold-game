@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { PhysarumSim } from './PhysarumSim.js'
+import { PhysarumSim } from './PhysarumSim.ts'
 
 /**
  * Maze-solving test for the Physarum simulation.

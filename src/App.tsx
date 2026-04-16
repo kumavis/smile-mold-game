@@ -1,39 +1,46 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react'
-import Scene from './components/Scene'
-import UI from './components/UI'
-import { PhysarumSim } from './simulation/PhysarumSim'
-import { generateTerrain } from './utils/terrainGen'
+import Scene from './components/Scene.tsx'
+import UI from './components/UI.tsx'
+import type { SlimeCustomization } from './components/UI.tsx'
+import { PhysarumSim } from './simulation/PhysarumSim.ts'
+import type { PhysarumOptions } from './simulation/PhysarumSim.ts'
+import { generateTerrain } from './utils/terrainGen.ts'
+import type { TerrainData } from './utils/terrainGen.ts'
 
 const GRID_SIZE = 48
 const STORAGE_KEY = 'slime-mold-terrarium'
 
-const DEFAULTS = {
+const DEFAULTS: SlimeCustomization = {
   slimeName: 'Blobby',
   slimeColor: '#d4e52e',
-  sensorAngle: Math.PI / 8,       // 22.5°
-  rotationAngle: Math.PI / 4,     // 45°
+  sensorAngle: Math.PI / 8,
+  rotationAngle: Math.PI / 4,
   sensorDistance: 5,
   depositAmount: 5,
   decayFactor: 0.9,
   slimeAvoidanceWeight: 0.3,
 }
 
-function loadSaved() {
+function loadSaved(): SlimeCustomization {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (raw) {
-      const parsed = JSON.parse(raw)
+      const parsed = JSON.parse(raw) as Partial<SlimeCustomization>
       return { ...DEFAULTS, ...parsed }
     }
   } catch { /* ignore corrupt data */ }
   return { ...DEFAULTS }
 }
 
-function createGame(seed, behaviorOpts) {
+interface GameState {
+  terrain: TerrainData
+  sim: PhysarumSim
+}
+
+function createGame(seed: number, behaviorOpts: PhysarumOptions): GameState {
   const terrain = generateTerrain(GRID_SIZE, GRID_SIZE, seed)
   const sim = new PhysarumSim(GRID_SIZE, GRID_SIZE, behaviorOpts)
 
-  // Block cells where rocks are tall (height >= 4 and type === rock)
   for (let z = 0; z < GRID_SIZE; z++) {
     for (let x = 0; x < GRID_SIZE; x++) {
       const idx = z * GRID_SIZE + x
@@ -43,7 +50,6 @@ function createGame(seed, behaviorOpts) {
     }
   }
 
-  // Seed initial slime mold in the center
   const cx = Math.floor(GRID_SIZE / 2)
   const cy = Math.floor(GRID_SIZE / 2)
   sim.seedAgents(cx, cy, 300, 4)
@@ -61,7 +67,6 @@ export default function App() {
   const [simSpeed, setSimSpeed] = useState(3)
   const [paused, setPaused] = useState(false)
 
-  // Behavioral parameters
   const [sensorAngle, setSensorAngle] = useState(saved.sensorAngle)
   const [rotationAngle, setRotationAngle] = useState(saved.rotationAngle)
   const [sensorDistance, setSensorDistance] = useState(saved.sensorDistance)
@@ -69,10 +74,9 @@ export default function App() {
   const [decayFactor, setDecayFactor] = useState(saved.decayFactor)
   const [slimeAvoidanceWeight, setSlimeAvoidanceWeight] = useState(saved.slimeAvoidanceWeight)
 
-  const gameRef = useRef(null)
+  const gameRef = useRef<GameState | null>(null)
   const [simTick, setSimTick] = useState(0)
 
-  // Initialize game
   if (!gameRef.current) {
     gameRef.current = createGame(terrainSeed, {
       sensorAngle, rotationAngle, sensorDistance,
@@ -80,9 +84,8 @@ export default function App() {
     })
   }
 
-  // Persist customization to localStorage
   useEffect(() => {
-    const data = {
+    const data: SlimeCustomization = {
       slimeName, slimeColor,
       sensorAngle, rotationAngle, sensorDistance,
       depositAmount, decayFactor, slimeAvoidanceWeight,
@@ -91,7 +94,6 @@ export default function App() {
   }, [slimeName, slimeColor, sensorAngle, rotationAngle, sensorDistance,
       depositAmount, decayFactor, slimeAvoidanceWeight])
 
-  // Apply behavioral param changes to the live simulation
   useEffect(() => {
     if (!gameRef.current) return
     const sim = gameRef.current.sim
@@ -115,24 +117,23 @@ export default function App() {
   }, [sensorAngle, rotationAngle, sensorDistance,
       depositAmount, decayFactor, slimeAvoidanceWeight])
 
-  const handlePlaceFood = useCallback((x, z) => {
+  const handlePlaceFood = useCallback((x: number, z: number) => {
     if (!gameRef.current) return
     gameRef.current.sim.addFood(x, z)
     setSimTick(t => t + 1)
   }, [])
 
-  const handleRemoveFood = useCallback((x, z) => {
+  const handleRemoveFood = useCallback((x: number, z: number) => {
     if (!gameRef.current) return
     gameRef.current.sim.removeFood(x, z)
     setSimTick(t => t + 1)
   }, [])
 
-  // Simulation loop
   useEffect(() => {
     if (paused || !gameRef.current) return
     const interval = setInterval(() => {
       for (let i = 0; i < simSpeed; i++) {
-        gameRef.current.sim.step()
+        gameRef.current!.sim.step()
       }
       setSimTick(t => t + 1)
     }, 50)
@@ -157,31 +158,19 @@ export default function App() {
         heightMap={terrain.heightMap}
       />
       <UI
-        slimeName={slimeName}
-        setSlimeName={setSlimeName}
-        slimeColor={slimeColor}
-        setSlimeColor={setSlimeColor}
+        slimeName={slimeName} setSlimeName={setSlimeName}
+        slimeColor={slimeColor} setSlimeColor={setSlimeColor}
         onRegenTerrain={regenerateTerrain}
-        foodMode={foodMode}
-        setFoodMode={setFoodMode}
-        simSpeed={simSpeed}
-        setSimSpeed={setSimSpeed}
-        paused={paused}
-        setPaused={setPaused}
-        agentCount={sim.agentCount}
-        foodCount={foodSources.length}
-        sensorAngle={sensorAngle}
-        setSensorAngle={setSensorAngle}
-        rotationAngle={rotationAngle}
-        setRotationAngle={setRotationAngle}
-        sensorDistance={sensorDistance}
-        setSensorDistance={setSensorDistance}
-        depositAmount={depositAmount}
-        setDepositAmount={setDepositAmount}
-        decayFactor={decayFactor}
-        setDecayFactor={setDecayFactor}
-        slimeAvoidanceWeight={slimeAvoidanceWeight}
-        setSlimeAvoidanceWeight={setSlimeAvoidanceWeight}
+        foodMode={foodMode} setFoodMode={setFoodMode}
+        simSpeed={simSpeed} setSimSpeed={setSimSpeed}
+        paused={paused} setPaused={setPaused}
+        agentCount={sim.agentCount} foodCount={foodSources.length}
+        sensorAngle={sensorAngle} setSensorAngle={setSensorAngle}
+        rotationAngle={rotationAngle} setRotationAngle={setRotationAngle}
+        sensorDistance={sensorDistance} setSensorDistance={setSensorDistance}
+        depositAmount={depositAmount} setDepositAmount={setDepositAmount}
+        decayFactor={decayFactor} setDecayFactor={setDecayFactor}
+        slimeAvoidanceWeight={slimeAvoidanceWeight} setSlimeAvoidanceWeight={setSlimeAvoidanceWeight}
         defaults={DEFAULTS}
       />
     </>

@@ -1,6 +1,49 @@
 import React, { useState } from 'react'
+import type { CSSProperties } from 'react'
+import type { PhysarumOptions } from '../simulation/PhysarumSim.ts'
 
-const panelStyle = {
+/** All persisted customization fields */
+export interface SlimeCustomization {
+  slimeName: string
+  slimeColor: string
+  sensorAngle: number
+  rotationAngle: number
+  sensorDistance: number
+  depositAmount: number
+  decayFactor: number
+  slimeAvoidanceWeight: number
+}
+
+interface Props {
+  slimeName: string
+  setSlimeName: (v: string) => void
+  slimeColor: string
+  setSlimeColor: (v: string) => void
+  onRegenTerrain: () => void
+  foodMode: boolean
+  setFoodMode: (v: boolean) => void
+  simSpeed: number
+  setSimSpeed: (v: number) => void
+  paused: boolean
+  setPaused: (v: boolean) => void
+  agentCount: number
+  foodCount: number
+  sensorAngle: number
+  setSensorAngle: (v: number) => void
+  rotationAngle: number
+  setRotationAngle: (v: number) => void
+  sensorDistance: number
+  setSensorDistance: (v: number) => void
+  depositAmount: number
+  setDepositAmount: (v: number) => void
+  decayFactor: number
+  setDecayFactor: (v: number) => void
+  slimeAvoidanceWeight: number
+  setSlimeAvoidanceWeight: (v: number) => void
+  defaults: SlimeCustomization
+}
+
+const panelStyle: CSSProperties = {
   position: 'absolute',
   top: 12,
   left: 12,
@@ -19,7 +62,7 @@ const panelStyle = {
   zIndex: 100,
 }
 
-const buttonStyle = {
+const buttonStyle: CSSProperties = {
   background: 'rgba(50, 120, 50, 0.4)',
   border: '1px solid rgba(100, 200, 100, 0.4)',
   borderRadius: 4,
@@ -30,14 +73,14 @@ const buttonStyle = {
   transition: 'background 0.2s',
 }
 
-const activeButtonStyle = {
+const activeButtonStyle: CSSProperties = {
   ...buttonStyle,
   background: 'rgba(100, 200, 100, 0.5)',
   border: '1px solid rgba(150, 255, 150, 0.6)',
   color: '#ffffff',
 }
 
-const inputStyle = {
+const inputStyle: CSSProperties = {
   background: 'rgba(20, 20, 40, 0.8)',
   border: '1px solid rgba(100, 200, 100, 0.3)',
   borderRadius: 4,
@@ -48,7 +91,7 @@ const inputStyle = {
   width: '100%',
 }
 
-const labelStyle = {
+const labelStyle: CSSProperties = {
   display: 'block',
   marginBottom: 3,
   fontSize: 11,
@@ -57,7 +100,7 @@ const labelStyle = {
   letterSpacing: 1,
 }
 
-const sectionHeaderStyle = {
+const sectionHeaderStyle: CSSProperties = {
   display: 'flex',
   justifyContent: 'space-between',
   alignItems: 'center',
@@ -65,10 +108,20 @@ const sectionHeaderStyle = {
   padding: '4px 0',
 }
 
-const toDeg = (rad) => Math.round(rad * 180 / Math.PI)
-const toRad = (deg) => deg * Math.PI / 180
+const toDeg = (rad: number) => Math.round(rad * 180 / Math.PI)
+const toRad = (deg: number) => deg * Math.PI / 180
 
-function SliderParam({ label, value, onChange, min, max, step, display }) {
+interface SliderProps {
+  label: string
+  value: number
+  onChange: (v: number) => void
+  min: number
+  max: number
+  step: number
+  display: string | number
+}
+
+function SliderParam({ label, value, onChange, min, max, step, display }: SliderProps) {
   return (
     <div style={{ marginBottom: 6 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
@@ -100,7 +153,7 @@ export default function UI({
   decayFactor, setDecayFactor,
   slimeAvoidanceWeight, setSlimeAvoidanceWeight,
   defaults,
-}) {
+}: Props) {
   const [collapsed, setCollapsed] = useState(false)
   const [behaviorOpen, setBehaviorOpen] = useState(false)
 
@@ -162,7 +215,7 @@ export default function UI({
             {/* Slime color */}
             <div>
               <label style={labelStyle}>Slime Color</label>
-              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                 <input
                   type="color"
                   value={slimeColor}
@@ -186,62 +239,30 @@ export default function UI({
 
             {/* Behavior section */}
             <div>
-              <div
-                style={sectionHeaderStyle}
-                onClick={() => setBehaviorOpen(!behaviorOpen)}
-              >
+              <div style={sectionHeaderStyle} onClick={() => setBehaviorOpen(!behaviorOpen)}>
                 <label style={{ ...labelStyle, marginBottom: 0, cursor: 'pointer' }}>Behavior</label>
                 <span style={{ fontSize: 10, color: '#708860' }}>{behaviorOpen ? '[ - ]' : '[ + ]'}</span>
               </div>
 
               {behaviorOpen && (
                 <div style={{ marginTop: 6 }}>
-                  <SliderParam
-                    label="Sensor Spread"
-                    value={toDeg(sensorAngle)}
-                    onChange={v => setSensorAngle(toRad(v))}
-                    min={5} max={90} step={1}
-                    display={`${toDeg(sensorAngle)}\u00B0`}
-                  />
-                  <SliderParam
-                    label="Turn Sharpness"
-                    value={toDeg(rotationAngle)}
-                    onChange={v => setRotationAngle(toRad(v))}
-                    min={5} max={90} step={1}
-                    display={`${toDeg(rotationAngle)}\u00B0`}
-                  />
-                  <SliderParam
-                    label="Sensor Range"
-                    value={sensorDistance}
-                    onChange={setSensorDistance}
-                    min={1} max={9} step={1}
-                    display={sensorDistance}
-                  />
-                  <SliderParam
-                    label="Trail Strength"
-                    value={depositAmount}
-                    onChange={setDepositAmount}
-                    min={1} max={15} step={1}
-                    display={depositAmount}
-                  />
-                  <SliderParam
-                    label="Trail Persistence"
-                    value={decayFactor}
-                    onChange={setDecayFactor}
-                    min={0.5} max={0.99} step={0.01}
-                    display={decayFactor.toFixed(2)}
-                  />
-                  <SliderParam
-                    label="Memory (Slime Avoidance)"
-                    value={slimeAvoidanceWeight}
-                    onChange={setSlimeAvoidanceWeight}
-                    min={0} max={1} step={0.05}
-                    display={slimeAvoidanceWeight.toFixed(2)}
-                  />
-                  <button
-                    style={{ ...buttonStyle, marginTop: 4, fontSize: 11 }}
-                    onClick={resetBehavior}
-                  >
+                  <SliderParam label="Sensor Spread" value={toDeg(sensorAngle)}
+                    onChange={v => setSensorAngle(toRad(v))} min={5} max={90} step={1}
+                    display={`${toDeg(sensorAngle)}\u00B0`} />
+                  <SliderParam label="Turn Sharpness" value={toDeg(rotationAngle)}
+                    onChange={v => setRotationAngle(toRad(v))} min={5} max={90} step={1}
+                    display={`${toDeg(rotationAngle)}\u00B0`} />
+                  <SliderParam label="Sensor Range" value={sensorDistance}
+                    onChange={setSensorDistance} min={1} max={9} step={1} display={sensorDistance} />
+                  <SliderParam label="Trail Strength" value={depositAmount}
+                    onChange={setDepositAmount} min={1} max={15} step={1} display={depositAmount} />
+                  <SliderParam label="Trail Persistence" value={decayFactor}
+                    onChange={setDecayFactor} min={0.5} max={0.99} step={0.01}
+                    display={decayFactor.toFixed(2)} />
+                  <SliderParam label="Memory (Slime Avoidance)" value={slimeAvoidanceWeight}
+                    onChange={setSlimeAvoidanceWeight} min={0} max={1} step={0.05}
+                    display={slimeAvoidanceWeight.toFixed(2)} />
+                  <button style={{ ...buttonStyle, marginTop: 4, fontSize: 11 }} onClick={resetBehavior}>
                     Reset to Defaults
                   </button>
                 </div>
@@ -251,9 +272,7 @@ export default function UI({
             {/* Terrain */}
             <div>
               <label style={labelStyle}>Terrain</label>
-              <button style={buttonStyle} onClick={onRegenTerrain}>
-                Regenerate Terrain
-              </button>
+              <button style={buttonStyle} onClick={onRegenTerrain}>Regenerate Terrain</button>
             </div>
 
             {/* Food placement */}
@@ -263,11 +282,11 @@ export default function UI({
                 style={foodMode ? activeButtonStyle : buttonStyle}
                 onClick={() => setFoodMode(!foodMode)}
               >
-                {foodMode ? 'Click terrain to place food (active)' : 'Place Food Mode'}
+                {foodMode ? 'Tap terrain to place food (active)' : 'Place Food Mode'}
               </button>
               {foodMode && (
                 <div style={{ fontSize: 10, color: '#708860', marginTop: 4 }}>
-                  Click to place | Shift+Click to remove
+                  Tap to place | Shift+Click to remove
                 </div>
               )}
             </div>
@@ -276,21 +295,13 @@ export default function UI({
             <div>
               <label style={labelStyle}>Simulation</label>
               <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                <button
-                  style={paused ? activeButtonStyle : buttonStyle}
-                  onClick={() => setPaused(!paused)}
-                >
+                <button style={paused ? activeButtonStyle : buttonStyle} onClick={() => setPaused(!paused)}>
                   {paused ? 'Resume' : 'Pause'}
                 </button>
                 <span style={{ fontSize: 11, color: '#708860' }}>Speed:</span>
-                <input
-                  type="range"
-                  min={1}
-                  max={10}
-                  value={simSpeed}
+                <input type="range" min={1} max={10} value={simSpeed}
                   onChange={e => setSimSpeed(Number(e.target.value))}
-                  style={{ width: 80, accentColor: '#4a8a3a' }}
-                />
+                  style={{ width: 80, accentColor: '#4a8a3a' }} />
                 <span style={{ fontSize: 11, color: '#8ab078' }}>x{simSpeed}</span>
               </div>
             </div>
@@ -312,7 +323,7 @@ export default function UI({
         zIndex: 100,
         whiteSpace: 'nowrap',
       }}>
-        Drag to orbit | Scroll to zoom | Place food to attract your slime mold
+        Drag to orbit | Pinch to zoom | Place food to attract your slime mold
       </div>
     </>
   )
