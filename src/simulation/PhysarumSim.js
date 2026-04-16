@@ -64,6 +64,18 @@ export class PhysarumSim {
     }
   }
 
+  /**
+   * Load a maze from a 2D array of 0s and 1s (1 = wall).
+   * The array is [row][col] where row = y, col = x.
+   */
+  loadMaze(mazeGrid) {
+    for (let y = 0; y < mazeGrid.length && y < this.height; y++) {
+      for (let x = 0; x < mazeGrid[y].length && x < this.width; x++) {
+        this.blocked[y * this.width + x] = mazeGrid[y][x] ? 1 : 0
+      }
+    }
+  }
+
   /** Add a food source at grid position */
   addFood(x, y) {
     x = Math.round(x)
@@ -132,6 +144,7 @@ export class PhysarumSim {
     this._moveAgents()
     this._diffuseTrail()
     this._decayTrail()
+    this._reinforceNetwork()
     this._growTowardFood()
   }
 
@@ -146,6 +159,7 @@ export class PhysarumSim {
           const nx = food.x + dx
           const ny = food.y + dy
           if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue
+          if (this.blocked[ny * w + nx]) continue  // no emission into walls
           const dist = Math.sqrt(dx * dx + dy * dy)
           if (dist <= r) {
             const falloff = 1 - dist / (r + 1)
@@ -245,22 +259,43 @@ export class PhysarumSim {
     }
   }
 
-  /** 3x3 mean filter diffusion */
+  /**
+   * 3x3 mean filter diffusion, wall-aware.
+   *
+   * Critical for maze-solving: chemoattractant must NOT diffuse through
+   * blocked cells (walls). In the real organism, chemical signals propagate
+   * only through the plasmodium and surrounding medium, not through solid
+   * barriers. Without this, the slime would "smell" food through walls
+   * and maze-solving would fail.
+   */
   _diffuseTrail() {
     const w = this.width
     const h = this.height
     const src = this.trailMap
     const dst = this.trailMapB
+    const blocked = this.blocked
 
     for (let y = 1; y < h - 1; y++) {
       for (let x = 1; x < w - 1; x++) {
+        const idx = y * w + x
+        // Blocked cells don't participate in diffusion
+        if (blocked[idx]) {
+          dst[idx] = 0
+          continue
+        }
         let sum = 0
+        let count = 0
         for (let dy = -1; dy <= 1; dy++) {
           for (let dx = -1; dx <= 1; dx++) {
-            sum += src[(y + dy) * w + (x + dx)]
+            const nIdx = (y + dy) * w + (x + dx)
+            // Only diffuse from non-blocked neighbors
+            if (!blocked[nIdx]) {
+              sum += src[nIdx]
+              count++
+            }
           }
         }
-        dst[y * w + x] = sum / 9
+        dst[idx] = count > 0 ? sum / count : 0
       }
     }
 
@@ -273,7 +308,9 @@ export class PhysarumSim {
   _decayTrail() {
     const t = this.trailMap
     const df = this.decayFactor
+    const blocked = this.blocked
     for (let i = 0; i < t.length; i++) {
+      if (blocked[i]) { t[i] = 0; continue }
       t[i] *= df
       if (t[i] < 0.01) t[i] = 0
     }
@@ -282,6 +319,47 @@ export class PhysarumSim {
     const vd = this.visitedDecay
     for (let i = 0; i < v.length; i++) {
       v[i] *= vd
+    }
+  }
+
+  /**
+   * Network reinforcement inspired by Tero et al. (2007) adaptive dynamics.
+   *
+   * In real Physarum, tubes carrying higher cytoplasmic flux grow thicker
+   * (actin-myosin cortex expands) while underused tubes shrink and are
+   * reabsorbed. Mathematically: dD/dt = f(|Q|) - r*D.
+   *
+   * We approximate this by counting local agent density as a proxy for
+   * "flux" and giving a small trail boost to high-traffic cells. This
+   * creates the positive feedback loop that makes the organism converge
+   * on shortest paths through mazes (Nakagaki et al. 2000 Nature).
+   */
+  _reinforceNetwork() {
+    const w = this.width
+    const h = this.height
+    const t = this.trailMap
+
+    // Count agent density per cell (proxy for cytoplasmic flux)
+    // Cells with many nearby agents are part of active transport tubes
+    for (let i = 0; i < this.agentCount; i++) {
+      const ax = Math.floor(this.agentX[i])
+      const ay = Math.floor(this.agentY[i])
+      if (ax < 1 || ax >= w - 1 || ay < 1 || ay >= h - 1) continue
+
+      // Count neighbors in 3x3
+      let neighbors = 0
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          if (dx === 0 && dy === 0) continue
+          if (this.occupancy[(ay + dy) * w + (ax + dx)]) neighbors++
+        }
+      }
+
+      // High local density → reinforce trail (tube thickening)
+      // This amplifies trails along busy routes and starves dead ends
+      if (neighbors >= 2) {
+        t[ay * w + ax] += neighbors * 0.3
+      }
     }
   }
 
