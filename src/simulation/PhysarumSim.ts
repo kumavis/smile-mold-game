@@ -55,6 +55,14 @@ export interface SlimeCell {
   height: number
 }
 
+/** A chemoattractant gradient cell for rendering the food "scent" */
+export interface ChemoCell {
+  x: number
+  y: number
+  /** Normalized food-scent intensity (0–1) */
+  intensity: number
+}
+
 export class PhysarumSim {
   readonly width: number
   readonly height: number
@@ -75,6 +83,8 @@ export class PhysarumSim {
   // State
   trailMap: Float32Array
   trailMapB: Float32Array
+  foodTrailMap: Float32Array
+  foodTrailMapB: Float32Array
   occupancy: Uint8Array
   agentX: Float32Array
   agentY: Float32Array
@@ -104,6 +114,8 @@ export class PhysarumSim {
 
     this.trailMap = new Float32Array(width * height)
     this.trailMapB = new Float32Array(width * height)
+    this.foodTrailMap = new Float32Array(width * height)
+    this.foodTrailMapB = new Float32Array(width * height)
     this.occupancy = new Uint8Array(width * height)
 
     this.agentX = new Float32Array(this.maxAgents)
@@ -206,7 +218,9 @@ export class PhysarumSim {
           const dist = Math.sqrt(dx * dx + dy * dy)
           if (dist <= r) {
             const falloff = 1 - dist / (r + 1)
-            this.trailMap[ny * w + nx] += this.foodDepositAmount * falloff
+            const amount = this.foodDepositAmount * falloff
+            this.trailMap[ny * w + nx] += amount
+            this.foodTrailMap[ny * w + nx] += amount
           }
         }
       }
@@ -286,11 +300,10 @@ export class PhysarumSim {
     }
   }
 
-  private _diffuseTrail(): void {
+  /** Wall-aware 3x3 mean filter on a Float32Array pair, swaps in place. */
+  private _diffuseMap(src: Float32Array, dst: Float32Array): { out: Float32Array, buf: Float32Array } {
     const w = this.width
     const h = this.height
-    const src = this.trailMap
-    const dst = this.trailMapB
     const blocked = this.blocked
 
     for (let y = 1; y < h - 1; y++) {
@@ -314,19 +327,30 @@ export class PhysarumSim {
         dst[idx] = count > 0 ? sum / count : 0
       }
     }
+    return { out: dst, buf: src }
+  }
 
-    this.trailMap = dst
-    this.trailMapB = src
+  private _diffuseTrail(): void {
+    const main = this._diffuseMap(this.trailMap, this.trailMapB)
+    this.trailMap = main.out
+    this.trailMapB = main.buf
+
+    const food = this._diffuseMap(this.foodTrailMap, this.foodTrailMapB)
+    this.foodTrailMap = food.out
+    this.foodTrailMapB = food.buf
   }
 
   private _decayTrail(): void {
     const t = this.trailMap
+    const ft = this.foodTrailMap
     const df = this.decayFactor
     const blocked = this.blocked
     for (let i = 0; i < t.length; i++) {
-      if (blocked[i]) { t[i] = 0; continue }
+      if (blocked[i]) { t[i] = 0; ft[i] = 0; continue }
       t[i] *= df
       if (t[i] < 0.01) t[i] = 0
+      ft[i] *= df
+      if (ft[i] < 0.01) ft[i] = 0
     }
     const v = this.visitedTrail
     const vd = this.visitedDecay
@@ -411,6 +435,40 @@ export class PhysarumSim {
             x, y,
             intensity: Math.min(val, 1.0),
             height: Math.min(Math.floor(val * 3) + 1, 3)
+          })
+        }
+      }
+    }
+    return cells
+  }
+
+  /**
+   * Get cells where food chemoattractant is present but slime has NOT
+   * yet reached — the visible "scent frontier" spreading from food.
+   */
+  getChemoGradientCells(threshold: number = 0.05): ChemoCell[] {
+    const cells: ChemoCell[] = []
+    const w = this.width
+    const h = this.height
+    const ft = this.foodTrailMap
+
+    let maxVal = 1
+    for (let i = 0; i < ft.length; i++) {
+      if (ft[i] > maxVal) maxVal = ft[i]
+    }
+
+    const normFactor = maxVal * 0.2
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const idx = y * w + x
+        if (this.blocked[idx]) continue
+        // Only show where slime has NOT been — the unexplored scent
+        if (this.visitedTrail[idx] > 0.01) continue
+        const val = ft[idx] / normFactor
+        if (val > threshold) {
+          cells.push({
+            x, y,
+            intensity: Math.min(val, 1.0),
           })
         }
       }

@@ -142,6 +142,7 @@ export default function App() {
 
   const { terrain, sim } = gameRef.current
   const slimeCells = sim.getActiveCells(0.06)
+  const chemoCells = sim.getChemoGradientCells(0.05)
   const foodSources = sim.foodSources
 
   return (
@@ -149,6 +150,7 @@ export default function App() {
       <Scene
         terrain={terrain}
         slimeCells={slimeCells}
+        chemoCells={chemoCells}
         slimeColor={slimeColor}
         foodSources={foodSources}
         gridSize={GRID_SIZE}

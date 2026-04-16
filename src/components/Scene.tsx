@@ -5,13 +5,15 @@ import type { ThreeEvent } from '@react-three/fiber'
 import TerrainMesh from './TerrainMesh.tsx'
 import SlimeMoldMesh from './SlimeMoldMesh.tsx'
 import FoodMesh from './FoodMesh.tsx'
+import ChemoTrailMesh from './ChemoTrailMesh.tsx'
 import Terrarium from './Terrarium.tsx'
 import type { TerrainData } from '../utils/terrainGen.ts'
-import type { SlimeCell, GridPos } from '../simulation/PhysarumSim.ts'
+import type { SlimeCell, ChemoCell, GridPos } from '../simulation/PhysarumSim.ts'
 
 interface Props {
   terrain: TerrainData
   slimeCells: SlimeCell[]
+  chemoCells: ChemoCell[]
   slimeColor: string
   foodSources: GridPos[]
   gridSize: number
@@ -22,7 +24,7 @@ interface Props {
 }
 
 export default function Scene({
-  terrain, slimeCells, slimeColor, foodSources, gridSize,
+  terrain, slimeCells, chemoCells, slimeColor, foodSources, gridSize,
   foodMode, onPlaceFood, onRemoveFood, heightMap
 }: Props) {
   const offset = -gridSize / 2
@@ -41,6 +43,11 @@ export default function Scene({
 
       <group position={[offset, 0, offset]}>
         <TerrainMesh terrain={terrain} />
+        <ChemoTrailMesh
+          cells={chemoCells}
+          heightMap={heightMap}
+          gridWidth={gridSize}
+        />
         <SlimeMoldMesh
           cells={slimeCells}
           color={slimeColor}
