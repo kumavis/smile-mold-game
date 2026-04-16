@@ -11,7 +11,9 @@ const panelStyle = {
   color: '#d0e8c0',
   fontFamily: "'Segoe UI', system-ui, sans-serif",
   fontSize: 13,
-  minWidth: 220,
+  minWidth: 240,
+  maxHeight: 'calc(100vh - 24px)',
+  overflowY: 'auto',
   backdropFilter: 'blur(8px)',
   userSelect: 'none',
   zIndex: 100,
@@ -55,13 +57,61 @@ const labelStyle = {
   letterSpacing: 1,
 }
 
+const sectionHeaderStyle = {
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  cursor: 'pointer',
+  padding: '4px 0',
+}
+
+const toDeg = (rad) => Math.round(rad * 180 / Math.PI)
+const toRad = (deg) => deg * Math.PI / 180
+
+function SliderParam({ label, value, onChange, min, max, step, display }) {
+  return (
+    <div style={{ marginBottom: 6 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
+        <span style={{ fontSize: 11, color: '#8ab078' }}>{label}</span>
+        <span style={{ fontSize: 11, color: '#a0c890', fontFamily: 'monospace' }}>{display}</span>
+      </div>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={e => onChange(Number(e.target.value))}
+        style={{ width: '100%', accentColor: '#4a8a3a', height: 4 }}
+      />
+    </div>
+  )
+}
+
 export default function UI({
   slimeName, setSlimeName, slimeColor, setSlimeColor,
   onRegenTerrain, foodMode, setFoodMode,
   simSpeed, setSimSpeed, paused, setPaused,
   agentCount, foodCount,
+  sensorAngle, setSensorAngle,
+  rotationAngle, setRotationAngle,
+  sensorDistance, setSensorDistance,
+  depositAmount, setDepositAmount,
+  decayFactor, setDecayFactor,
+  slimeAvoidanceWeight, setSlimeAvoidanceWeight,
+  defaults,
 }) {
   const [collapsed, setCollapsed] = useState(false)
+  const [behaviorOpen, setBehaviorOpen] = useState(false)
+
+  const resetBehavior = () => {
+    setSensorAngle(defaults.sensorAngle)
+    setRotationAngle(defaults.rotationAngle)
+    setSensorDistance(defaults.sensorDistance)
+    setDepositAmount(defaults.depositAmount)
+    setDecayFactor(defaults.decayFactor)
+    setSlimeAvoidanceWeight(defaults.slimeAvoidanceWeight)
+  }
 
   return (
     <>
@@ -89,7 +139,7 @@ export default function UI({
       {/* Control panel */}
       <div style={panelStyle}>
         <div
-          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: collapsed ? 0 : 12, cursor: 'pointer' }}
+          style={{ ...sectionHeaderStyle, marginBottom: collapsed ? 0 : 12 }}
           onClick={() => setCollapsed(!collapsed)}
         >
           <span style={{ fontSize: 14, fontWeight: 600 }}>Terrarium Controls</span>
@@ -120,7 +170,6 @@ export default function UI({
                   style={{ width: 32, height: 28, border: 'none', cursor: 'pointer', background: 'none' }}
                 />
                 <span style={{ fontSize: 12, color: '#8ab078' }}>{slimeColor}</span>
-                {/* Quick color presets */}
                 {['#d4e52e', '#e8a030', '#40c8e0', '#e860a0', '#a0ff60', '#ffffff'].map(c => (
                   <div
                     key={c}
@@ -133,6 +182,70 @@ export default function UI({
                   />
                 ))}
               </div>
+            </div>
+
+            {/* Behavior section */}
+            <div>
+              <div
+                style={sectionHeaderStyle}
+                onClick={() => setBehaviorOpen(!behaviorOpen)}
+              >
+                <label style={{ ...labelStyle, marginBottom: 0, cursor: 'pointer' }}>Behavior</label>
+                <span style={{ fontSize: 10, color: '#708860' }}>{behaviorOpen ? '[ - ]' : '[ + ]'}</span>
+              </div>
+
+              {behaviorOpen && (
+                <div style={{ marginTop: 6 }}>
+                  <SliderParam
+                    label="Sensor Spread"
+                    value={toDeg(sensorAngle)}
+                    onChange={v => setSensorAngle(toRad(v))}
+                    min={5} max={90} step={1}
+                    display={`${toDeg(sensorAngle)}\u00B0`}
+                  />
+                  <SliderParam
+                    label="Turn Sharpness"
+                    value={toDeg(rotationAngle)}
+                    onChange={v => setRotationAngle(toRad(v))}
+                    min={5} max={90} step={1}
+                    display={`${toDeg(rotationAngle)}\u00B0`}
+                  />
+                  <SliderParam
+                    label="Sensor Range"
+                    value={sensorDistance}
+                    onChange={setSensorDistance}
+                    min={1} max={9} step={1}
+                    display={sensorDistance}
+                  />
+                  <SliderParam
+                    label="Trail Strength"
+                    value={depositAmount}
+                    onChange={setDepositAmount}
+                    min={1} max={15} step={1}
+                    display={depositAmount}
+                  />
+                  <SliderParam
+                    label="Trail Persistence"
+                    value={decayFactor}
+                    onChange={setDecayFactor}
+                    min={0.5} max={0.99} step={0.01}
+                    display={decayFactor.toFixed(2)}
+                  />
+                  <SliderParam
+                    label="Memory (Slime Avoidance)"
+                    value={slimeAvoidanceWeight}
+                    onChange={setSlimeAvoidanceWeight}
+                    min={0} max={1} step={0.05}
+                    display={slimeAvoidanceWeight.toFixed(2)}
+                  />
+                  <button
+                    style={{ ...buttonStyle, marginTop: 4, fontSize: 11 }}
+                    onClick={resetBehavior}
+                  >
+                    Reset to Defaults
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Terrain */}
