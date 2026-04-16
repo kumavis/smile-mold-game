@@ -79,9 +79,16 @@ export default function SlimeMoldMesh({ cells, color, heightMap, gridWidth }: Pr
     mesh.count = idx
   }, [cells, baseHSL, heightMap, gridWidth])
 
+  // Opaque material with renderOrder=2 ensures reliable occlusion against
+  // the translucent chemo trail layer — no z-fighting, always visible
+  // from every camera angle.
   return (
-    <instancedMesh ref={meshRef} args={[geometry, undefined, MAX_SLIME_VOXELS]}>
-      <meshLambertMaterial color={0xffffff} transparent opacity={0.88} />
+    <instancedMesh
+      ref={meshRef}
+      args={[geometry, undefined, MAX_SLIME_VOXELS]}
+      renderOrder={2}
+    >
+      <meshLambertMaterial color={0xffffff} />
     </instancedMesh>
   )
 }

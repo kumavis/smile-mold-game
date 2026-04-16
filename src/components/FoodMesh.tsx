@@ -28,11 +28,12 @@ export default function FoodMesh({ foodSources, heightMap, gridWidth }: Props) {
     for (let i = 0; i < count; i++) {
       const food = foodSources[i]
       const surfaceH = heightMap[food.y * gridWidth + food.x] || 1
-      // Scale voxel size by remaining mass (min 0.3 so it's still visible)
-      const scale = Math.max(0.3, Math.sqrt(food.mass / food.initialMass))
+      // Scale voxel size by remaining mass (min 0.5 so it's always visible)
+      const scale = Math.max(0.5, Math.sqrt(food.mass / food.initialMass))
       const yHeight = 0.6 * scale
+      // Lift slightly above terrain to avoid grazing-angle z-fighting
       tempMatrix.compose(
-        new THREE.Vector3(food.x + 0.5, surfaceH + yHeight / 2, food.y + 0.5),
+        new THREE.Vector3(food.x + 0.5, surfaceH + yHeight / 2 + 0.05, food.y + 0.5),
         new THREE.Quaternion(),
         new THREE.Vector3(scale, scale, scale)
       )
@@ -52,7 +53,11 @@ export default function FoodMesh({ foodSources, heightMap, gridWidth }: Props) {
   }, [foodSources, heightMap, gridWidth])
 
   return (
-    <instancedMesh ref={meshRef} args={[geometry, undefined, MAX_FOOD]}>
+    <instancedMesh
+      ref={meshRef}
+      args={[geometry, undefined, MAX_FOOD]}
+      renderOrder={2}
+    >
       <meshLambertMaterial color={0xffffff} />
     </instancedMesh>
   )

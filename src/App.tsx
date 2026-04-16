@@ -7,7 +7,7 @@ import type { PhysarumOptions } from './simulation/PhysarumSim.ts'
 import { generateTerrain } from './utils/terrainGen.ts'
 import type { TerrainData } from './utils/terrainGen.ts'
 
-const GRID_SIZE = 48
+const GRID_SIZE = 96
 const STORAGE_KEY = 'slime-mold-terrarium'
 
 const DEFAULTS: SlimeCustomization = {
@@ -39,7 +39,8 @@ interface GameState {
 
 function createGame(seed: number, behaviorOpts: PhysarumOptions): GameState {
   const terrain = generateTerrain(GRID_SIZE, GRID_SIZE, seed)
-  const sim = new PhysarumSim(GRID_SIZE, GRID_SIZE, behaviorOpts)
+  // Scale up maxAgents for the larger grid so the population can grow
+  const sim = new PhysarumSim(GRID_SIZE, GRID_SIZE, { maxAgents: 6000, ...behaviorOpts })
 
   for (let z = 0; z < GRID_SIZE; z++) {
     for (let x = 0; x < GRID_SIZE; x++) {
@@ -52,7 +53,7 @@ function createGame(seed: number, behaviorOpts: PhysarumOptions): GameState {
 
   const cx = Math.floor(GRID_SIZE / 2)
   const cy = Math.floor(GRID_SIZE / 2)
-  sim.seedAgents(cx, cy, 300, 4)
+  sim.seedAgents(cx, cy, 800, 6)
 
   return { terrain, sim }
 }
@@ -63,7 +64,6 @@ export default function App() {
   const [slimeName, setSlimeName] = useState(saved.slimeName)
   const [slimeColor, setSlimeColor] = useState(saved.slimeColor)
   const [terrainSeed, setTerrainSeed] = useState(42)
-  const [foodMode, setFoodMode] = useState(false)
   const [simSpeed, setSimSpeed] = useState(1)
   const [paused, setPaused] = useState(false)
 
@@ -162,7 +162,6 @@ export default function App() {
         slimeColor={slimeColor}
         foodSources={foodSources}
         gridSize={GRID_SIZE}
-        foodMode={foodMode}
         onPlaceFood={handlePlaceFood}
         onRemoveFood={handleRemoveFood}
         heightMap={terrain.heightMap}
@@ -171,7 +170,6 @@ export default function App() {
         slimeName={slimeName} setSlimeName={setSlimeName}
         slimeColor={slimeColor} setSlimeColor={setSlimeColor}
         onRegenTerrain={regenerateTerrain}
-        foodMode={foodMode} setFoodMode={setFoodMode}
         simSpeed={simSpeed} setSimSpeed={setSimSpeed}
         paused={paused} setPaused={setPaused}
         agentCount={sim.agentCount} foodCount={foodSources.length}

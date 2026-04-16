@@ -20,8 +20,6 @@ interface Props {
   slimeColor: string
   setSlimeColor: (v: string) => void
   onRegenTerrain: () => void
-  foodMode: boolean
-  setFoodMode: (v: boolean) => void
   simSpeed: number
   setSimSpeed: (v: number) => void
   paused: boolean
@@ -143,7 +141,7 @@ function SliderParam({ label, value, onChange, min, max, step, display }: Slider
 
 export default function UI({
   slimeName, setSlimeName, slimeColor, setSlimeColor,
-  onRegenTerrain, foodMode, setFoodMode,
+  onRegenTerrain,
   simSpeed, setSimSpeed, paused, setPaused,
   agentCount, foodCount,
   sensorAngle, setSensorAngle,
@@ -275,22 +273,6 @@ export default function UI({
               <button style={buttonStyle} onClick={onRegenTerrain}>Regenerate Terrain</button>
             </div>
 
-            {/* Food placement */}
-            <div>
-              <label style={labelStyle}>Food</label>
-              <button
-                style={foodMode ? activeButtonStyle : buttonStyle}
-                onClick={() => setFoodMode(!foodMode)}
-              >
-                {foodMode ? 'Tap terrain to place food (active)' : 'Place Food Mode'}
-              </button>
-              {foodMode && (
-                <div style={{ fontSize: 10, color: '#708860', marginTop: 4 }}>
-                  Tap to place | Shift+Click to remove
-                </div>
-              )}
-            </div>
-
             {/* Simulation controls */}
             <div>
               <label style={labelStyle}>Simulation</label>
@@ -325,7 +307,7 @@ export default function UI({
         zIndex: 100,
         whiteSpace: 'nowrap',
       }}>
-        Drag to orbit | Pinch to zoom | Place food to attract your slime mold
+        Drag to orbit | Pinch/scroll to zoom | Tap terrain to place food | Shift+tap to remove
       </div>
     </>
   )
