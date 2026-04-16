@@ -142,7 +142,10 @@ export class PhysarumSim {
     this.defaultFoodMass = 1.0
     this.blocked = new Uint8Array(width * height)
     this.visitedTrail = new Float32Array(width * height)
-    this.visitedDecay = 0.999
+    // 0.99 → a cell visited once at max intensity fades to invisible
+    // in ~460 ticks (~23 seconds at 1x speed). Biologically this
+    // represents the plasmodium retracting from abandoned paths.
+    this.visitedDecay = 0.99
   }
 
   setBlocked(x: number, y: number, val: number = 1): void {
