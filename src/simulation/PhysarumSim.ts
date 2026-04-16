@@ -399,8 +399,14 @@ export class PhysarumSim {
     const normFactor = maxVal * 0.15
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
-        const val = t[y * w + x] / normFactor
-        if (val > threshold && !this.blocked[y * w + x]) {
+        const idx = y * w + x
+        // Only render cells an agent has actually visited.
+        // Food emits chemoattractant into trailMap to guide agents,
+        // but visitedTrail is only written by agent movement — so this
+        // prevents food from instantly appearing as slime.
+        if (this.visitedTrail[idx] < 0.01) continue
+        const val = t[idx] / normFactor
+        if (val > threshold && !this.blocked[idx]) {
           cells.push({
             x, y,
             intensity: Math.min(val, 1.0),
