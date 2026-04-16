@@ -59,7 +59,7 @@ export default function SlimeMoldMesh({ cells, color, heightMap, gridWidth }: Pr
 
   return (
     <instancedMesh ref={meshRef} args={[geometry, undefined, MAX_SLIME_VOXELS]}>
-      <meshLambertMaterial color={0xffffff} vertexColors transparent opacity={0.85} />
+      <meshLambertMaterial color={0xffffff} transparent opacity={0.85} />
     </instancedMesh>
   )
 }

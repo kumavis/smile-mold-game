@@ -40,7 +40,7 @@ export default function TerrainMesh({ terrain }: Props) {
 
   return (
     <instancedMesh ref={meshRef} args={[geometry, undefined, voxels.length]}>
-      <meshLambertMaterial color={0xffffff} vertexColors />
+      <meshLambertMaterial color={0xffffff} />
     </instancedMesh>
   )
 }

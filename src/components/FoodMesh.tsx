@@ -46,7 +46,7 @@ export default function FoodMesh({ foodSources, heightMap, gridWidth }: Props) {
 
   return (
     <instancedMesh ref={meshRef} args={[geometry, undefined, MAX_FOOD]}>
-      <meshLambertMaterial color={0xffffff} vertexColors />
+      <meshLambertMaterial color={0xffffff} />
     </instancedMesh>
   )
 }
