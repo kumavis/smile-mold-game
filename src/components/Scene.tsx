@@ -8,14 +8,14 @@ import FoodMesh from './FoodMesh.tsx'
 import ChemoTrailMesh from './ChemoTrailMesh.tsx'
 import Terrarium from './Terrarium.tsx'
 import type { TerrainData } from '../utils/terrainGen.ts'
-import type { SlimeCell, ChemoCell, GridPos } from '../simulation/PhysarumSim.ts'
+import type { SlimeCell, ChemoCell, FoodSource } from '../simulation/PhysarumSim.ts'
 
 interface Props {
   terrain: TerrainData
   slimeCells: SlimeCell[]
   chemoCells: ChemoCell[]
   slimeColor: string
-  foodSources: GridPos[]
+  foodSources: FoodSource[]
   gridSize: number
   foodMode: boolean
   onPlaceFood: (x: number, z: number) => void

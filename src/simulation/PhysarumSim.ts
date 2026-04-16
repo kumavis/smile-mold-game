@@ -45,6 +45,16 @@ export interface GridPos {
   y: number
 }
 
+/** A food source with consumable mass */
+export interface FoodSource {
+  x: number
+  y: number
+  /** Remaining mass (0–1). Food is removed when depleted. */
+  mass: number
+  /** Initial mass used for visual scaling. */
+  initialMass: number
+}
+
 /** A voxel cell returned by getActiveCells for rendering */
 export interface SlimeCell {
   x: number
@@ -90,7 +100,11 @@ export class PhysarumSim {
   agentY: Float32Array
   agentHeading: Float32Array
   agentCount: number
-  foodSources: GridPos[]
+  foodSources: FoodSource[]
+  /** How much mass is consumed per nearby agent per tick */
+  foodConsumptionRate: number
+  /** Default starting mass for new food */
+  defaultFoodMass: number
   blocked: Uint8Array
   visitedTrail: Float32Array
   visitedDecay: number
@@ -124,6 +138,8 @@ export class PhysarumSim {
     this.agentCount = 0
 
     this.foodSources = []
+    this.foodConsumptionRate = 0.0005
+    this.defaultFoodMass = 1.0
     this.blocked = new Uint8Array(width * height)
     this.visitedTrail = new Float32Array(width * height)
     this.visitedDecay = 0.999
@@ -143,11 +159,11 @@ export class PhysarumSim {
     }
   }
 
-  addFood(x: number, y: number): void {
+  addFood(x: number, y: number, mass: number = this.defaultFoodMass): void {
     x = Math.round(x)
     y = Math.round(y)
     if (x >= 0 && x < this.width && y >= 0 && y < this.height) {
-      this.foodSources.push({ x, y })
+      this.foodSources.push({ x, y, mass, initialMass: mass })
     }
   }
 
@@ -198,6 +214,7 @@ export class PhysarumSim {
   step(): void {
     this._emitFood()
     this._moveAgents()
+    this._consumeFood()
     this._diffuseTrail()
     this._decayTrail()
     this._reinforceNetwork()
@@ -209,6 +226,8 @@ export class PhysarumSim {
     const h = this.height
     const r = this.foodSpreadRadius
     for (const food of this.foodSources) {
+      // Emission strength scales with remaining mass
+      const strength = this.foodDepositAmount * food.mass
       for (let dy = -r; dy <= r; dy++) {
         for (let dx = -r; dx <= r; dx++) {
           const nx = food.x + dx
@@ -218,13 +237,40 @@ export class PhysarumSim {
           const dist = Math.sqrt(dx * dx + dy * dy)
           if (dist <= r) {
             const falloff = 1 - dist / (r + 1)
-            const amount = this.foodDepositAmount * falloff
+            const amount = strength * falloff
             this.trailMap[ny * w + nx] += amount
             this.foodTrailMap[ny * w + nx] += amount
           }
         }
       }
     }
+  }
+
+  /**
+   * Consume food mass based on nearby slime mold presence.
+   * The more agents near a food source, the faster it's consumed.
+   * Food is removed when its mass is depleted.
+   */
+  private _consumeFood(): void {
+    if (this.foodSources.length === 0) return
+    const w = this.width
+    const consumeRadius = 2
+
+    for (const food of this.foodSources) {
+      // Count agents near this food source
+      let nearbyAgents = 0
+      for (let i = 0; i < this.agentCount; i++) {
+        const dx = this.agentX[i] - food.x
+        const dy = this.agentY[i] - food.y
+        if (dx * dx + dy * dy <= consumeRadius * consumeRadius) {
+          nearbyAgents++
+        }
+      }
+      food.mass -= this.foodConsumptionRate * nearbyAgents
+    }
+
+    // Remove fully consumed food
+    this.foodSources = this.foodSources.filter(f => f.mass > 0.02)
   }
 
   private _moveAgents(): void {
@@ -383,13 +429,23 @@ export class PhysarumSim {
     }
   }
 
+  /**
+   * Once the slime has ACTUALLY reached a food source, spawn a few
+   * new agents nearby — simulating the organism's growth when feeding.
+   *
+   * Critical: we gate on visitedTrail (only written by agent movement),
+   * not on trailMap (which includes food emission). Otherwise new agents
+   * would spawn at food the moment it's placed, making slime appear
+   * there instantly without exploration.
+   */
   private _growTowardFood(): void {
     if (this.agentCount >= this.maxAgents) return
 
     for (const food of this.foodSources) {
       const idx = food.y * this.width + food.x
-      if (this.trailMap[idx] > 10 && Math.random() < 0.15) {
-        const count = Math.min(3, this.maxAgents - this.agentCount)
+      // Require real slime presence at/near the food
+      if (this.visitedTrail[idx] > 0.3 && Math.random() < 0.1) {
+        const count = Math.min(2, this.maxAgents - this.agentCount)
         this.seedAgents(food.x, food.y, count, 2)
       }
     }

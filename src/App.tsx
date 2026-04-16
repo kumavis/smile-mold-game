@@ -64,7 +64,7 @@ export default function App() {
   const [slimeColor, setSlimeColor] = useState(saved.slimeColor)
   const [terrainSeed, setTerrainSeed] = useState(42)
   const [foodMode, setFoodMode] = useState(false)
-  const [simSpeed, setSimSpeed] = useState(3)
+  const [simSpeed, setSimSpeed] = useState(1)
   const [paused, setPaused] = useState(false)
 
   const [sensorAngle, setSensorAngle] = useState(saved.sensorAngle)
@@ -129,13 +129,21 @@ export default function App() {
     setSimTick(t => t + 1)
   }, [])
 
+  // Step accumulator lets simSpeed be fractional (e.g. 0.25x = one step
+  // every 4 intervals) or high integer (10x = 10 steps per interval).
+  const stepAccumulator = useRef(0)
   useEffect(() => {
     if (paused || !gameRef.current) return
+    stepAccumulator.current = 0
     const interval = setInterval(() => {
-      for (let i = 0; i < simSpeed; i++) {
+      stepAccumulator.current += simSpeed
+      let stepped = false
+      while (stepAccumulator.current >= 1) {
         gameRef.current!.sim.step()
+        stepAccumulator.current -= 1
+        stepped = true
       }
-      setSimTick(t => t + 1)
+      if (stepped) setSimTick(t => t + 1)
     }, 50)
     return () => clearInterval(interval)
   }, [paused, simSpeed])

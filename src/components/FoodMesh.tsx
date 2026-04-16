@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useMemo } from 'react'
 import * as THREE from 'three'
-import type { GridPos } from '../simulation/PhysarumSim.ts'
+import type { FoodSource } from '../simulation/PhysarumSim.ts'
 
 const tempMatrix = new THREE.Matrix4()
 const tempColor = new THREE.Color()
@@ -10,7 +10,7 @@ const MAX_FOOD = 200
 const FOOD_COLORS: string[] = ['#e8c170', '#d4a843', '#f0d58c', '#c9953a']
 
 interface Props {
-  foodSources: GridPos[]
+  foodSources: FoodSource[]
   heightMap: Uint8Array
   gridWidth: number
 }
@@ -28,7 +28,14 @@ export default function FoodMesh({ foodSources, heightMap, gridWidth }: Props) {
     for (let i = 0; i < count; i++) {
       const food = foodSources[i]
       const surfaceH = heightMap[food.y * gridWidth + food.x] || 1
-      tempMatrix.makeTranslation(food.x + 0.5, surfaceH + 0.3, food.y + 0.5)
+      // Scale voxel size by remaining mass (min 0.3 so it's still visible)
+      const scale = Math.max(0.3, Math.sqrt(food.mass / food.initialMass))
+      const yHeight = 0.6 * scale
+      tempMatrix.compose(
+        new THREE.Vector3(food.x + 0.5, surfaceH + yHeight / 2, food.y + 0.5),
+        new THREE.Quaternion(),
+        new THREE.Vector3(scale, scale, scale)
+      )
       mesh.setMatrixAt(i, tempMatrix)
 
       tempColor.set(FOOD_COLORS[i % FOOD_COLORS.length])

@@ -299,10 +299,12 @@ export default function UI({
                   {paused ? 'Resume' : 'Pause'}
                 </button>
                 <span style={{ fontSize: 11, color: '#708860' }}>Speed:</span>
-                <input type="range" min={1} max={10} value={simSpeed}
+                <input type="range" min={0.25} max={10} step={0.25} value={simSpeed}
                   onChange={e => setSimSpeed(Number(e.target.value))}
                   style={{ width: 80, accentColor: '#4a8a3a' }} />
-                <span style={{ fontSize: 11, color: '#8ab078' }}>x{simSpeed}</span>
+                <span style={{ fontSize: 11, color: '#8ab078', fontFamily: 'monospace', minWidth: 40 }}>
+                  {simSpeed < 1 ? simSpeed.toFixed(2) : simSpeed.toFixed(0)}x
+                </span>
               </div>
             </div>
           </div>
